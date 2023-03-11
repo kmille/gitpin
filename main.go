@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
+	"github.com/akamensky/argparse"
 	"gopkg.in/ini.v1"
 )
 
@@ -58,10 +60,10 @@ func print_server_certificate(domain string) {
 	fmt.Println("Fingerprint:", generate_fingerprint(cert))
 }
 
-func parseGitConfig() []gitpin {
+func parseGitConfig(config_file string) []gitpin {
 
 	pins := []gitpin{}
-	cfg, err := ini.Load("/etc/gitconfig")
+	cfg, err := ini.Load(config_file)
 	fail_on_error(err)
 	for _, section := range cfg.Sections() {
 		parts := strings.Split(section.Name(), " ")
@@ -87,8 +89,8 @@ func parseGitConfig() []gitpin {
 	return pins
 }
 
-func checkPins() {
-	pins := parseGitConfig()
+func checkPins(config_file string) {
+	pins := parseGitConfig(config_file)
 	for _, pin := range pins {
 		fmt.Println("Checking pin for", pin.domain)
 		cfg, err := ini.Load(pin.file)
@@ -105,8 +107,8 @@ func checkPins() {
 	}
 }
 
-func updatePins() {
-	pins := parseGitConfig()
+func updatePins(config_file string) {
+	pins := parseGitConfig(config_file)
 	for _, pin := range pins {
 		fmt.Println("Updating pin for", pin.domain)
 		cfg, err := ini.Load(pin.file)
@@ -144,13 +146,42 @@ func addPin(domain string) {
 
 }
 
-func main() {
-	//domain := "www.google.com:443"
-	//domain := os.Args[1]
-	//print_server_certificate(domain)
-	//parseGitConfig()
+func get_config_file_location(system bool) string {
+	if system {
+		return "/etc/gitconfig"
+	} else {
+		return filepath.Join(os.Getenv("HOME"), ".gitconfig")
+	}
+}
 
-	//addPin("heise.de")
-	//checkPins()
-	updatePins()
+func main() {
+	parser := argparse.NewParser("gitpin", "add ssl pinning to git")
+	system := parser.Flag("", "system", &argparse.Options{Help: "use /etc/gitconfig instead of ~/.gitconfig"})
+	show_cert := parser.String("s", "show-cert", &argparse.Options{Help: "Show certificate of <domain>"})
+	action_check := parser.Flag("c", "check", &argparse.Options{Help: "Check if fingerprints match"})
+	action_update := parser.Flag("u", "update", &argparse.Options{Help: "Update fingerprints"})
+	action_add := parser.String("a", "add", &argparse.Options{Help: "add fingerprint for <domain>"})
+	action_version := parser.Flag("v", "version", &argparse.Options{Help: "Show version"})
+
+	err := parser.Parse(os.Args)
+
+	if err != nil || len(os.Args) == 1 {
+		fmt.Println(parser.Usage(err))
+		os.Exit(1)
+	}
+
+	config_file := get_config_file_location(*system)
+
+	if len(*show_cert) != 0 {
+		print_server_certificate(*show_cert)
+	} else if *action_check {
+		checkPins(config_file)
+	} else if *action_update {
+		updatePins(config_file)
+	} else if len(*action_add) != 0 {
+		addPin(*action_add)
+	} else if *action_version {
+		fmt.Println("0.1")
+	}
+
 }
