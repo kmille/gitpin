@@ -1,6 +1,6 @@
 # gitpin - ssl pinning for git
 
-`gitpin` is a small tool allows you to manage ssl pinning for git. You can also uses it manually:
+`gitpin` is a small tool that allows you to manage ssl pinnings for git. You can also uses it manually:
 
 ```bash
 kmille@linbox:~ cat ~/.gitconfig
@@ -38,4 +38,4 @@ Arguments:
   -v  --version    Show version
 ```
 
-Please don't forget that these days SSL certificates expire after 90 days and you have to update the pin.
+Please don't forget that these days SSL certificates expire after 90 days and you have to update the pin. There is also an [AUR](https://aur.archlinux.org/packages/gitpin) package for Arch Linux.
