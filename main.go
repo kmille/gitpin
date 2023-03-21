@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -16,55 +17,57 @@ import (
 	"gopkg.in/ini.v1"
 )
 
+const version = "v0.1.0"
+
 type gitpin struct {
 	domain string
 	file   string
 }
 
-func fail_on_error(err error) {
+func failOnError(err error) {
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 }
 
-func get_server_certificate(domain string) *x509.Certificate {
+func getServerCertificate(domain string) *x509.Certificate {
 	conf := &tls.Config{
 		InsecureSkipVerify: true,
 	}
 	conn, err := tls.Dial("tcp", domain+":443", conf)
-	fail_on_error(err)
+	failOnError(err)
 	defer conn.Close()
 	certs := conn.ConnectionState().PeerCertificates
 	return certs[0]
 }
 
-func generate_fingerprint(cert *x509.Certificate) string {
+func generateFingerprint(cert *x509.Certificate) string {
 	digest := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
 	fingerprint := base64.StdEncoding.EncodeToString(digest[:])
 	return "sha256//" + fingerprint
 }
 
-func get_server_fingerprint(domain string) string {
-	cert := get_server_certificate(domain)
-	return generate_fingerprint(cert)
+func getServerFingerprint(domain string) string {
+	cert := getServerCertificate(domain)
+	return generateFingerprint(cert)
 }
 
-func print_server_certificate(domain string) {
-	cert := get_server_certificate(domain)
+func printServerCertificate(domain string) {
+	cert := getServerCertificate(domain)
 	fmt.Println("CN:", cert.Subject.CommonName)
 	fmt.Println("Alternative subject names:", cert.DNSNames)
 	fmt.Println("NotBefore", cert.NotBefore)
 	fmt.Println("NotAfter", cert.NotAfter)
 	fmt.Println("PublicKeyAlgorithm:", cert.PublicKeyAlgorithm)
-	fmt.Println("Fingerprint:", generate_fingerprint(cert))
+	fmt.Println("Fingerprint:", generateFingerprint(cert))
 }
 
-func parseGitConfig(config_file string) []gitpin {
-
+func parseGitConfig(configFile string) []gitpin {
 	pins := []gitpin{}
-	cfg, err := ini.Load(config_file)
-	fail_on_error(err)
+	cfg, err := ini.Load(configFile)
+	failOnError(err)
+
 	for _, section := range cfg.Sections() {
 		parts := strings.Split(section.Name(), " ")
 		if strings.Compare(parts[0], "includeIf") != 0 {
@@ -73,15 +76,15 @@ func parseGitConfig(config_file string) []gitpin {
 		if !strings.Contains(parts[1], "hasconfig:remote.*.url:") {
 			continue
 		}
-		index_begin := strings.Index(parts[1], "https://")
-		domain := parts[1][index_begin+len("https://"):]
+		indexBegin := strings.Index(parts[1], "https://")
+		domain := parts[1][indexBegin+len("https://"):]
 		if strings.Contains(domain, "/") {
 			domain = domain[:strings.Index(domain, "/")]
 		}
 		s, err := cfg.GetSection(section.Name())
-		fail_on_error(err)
+		failOnError(err)
 		if !s.HasKey("path") {
-			fail_on_error(errors.New("Section '" + section.Name() + "' has no key 'path'"))
+			failOnError(errors.New("Section '" + section.Name() + "' has no key 'path'"))
 		}
 		gp := gitpin{domain: domain, file: s.Key("path").Value()}
 		pins = append(pins, gp)
@@ -89,79 +92,109 @@ func parseGitConfig(config_file string) []gitpin {
 	return pins
 }
 
-func checkPins(config_file string) {
-	pins := parseGitConfig(config_file)
+func checkPins(configFile string) {
+	pins := parseGitConfig(configFile)
 	for _, pin := range pins {
-		fmt.Println("Checking pin for", pin.domain)
+		fmt.Print("Checking pin for ", pin.domain, " ")
 		cfg, err := ini.Load(pin.file)
-		fail_on_error(err)
+		failOnError(err)
 		s, err := cfg.GetSection("http")
-		fail_on_error(err)
+		failOnError(err)
 		pinnedPubkey := s.Key("pinnedPubkey")
-		fingerprint := get_server_fingerprint(pin.domain)
-		if strings.Compare(pinnedPubkey.Value(), fingerprint) != 0 {
-			fmt.Println("Fingerprint does not match for domain", pin.domain)
+		fingerprint := getServerFingerprint(pin.domain)
+		if strings.Compare(pinnedPubkey.Value(), fingerprint) == 0 {
+			fmt.Println("\033[32mOK\033[0m")
+		} else {
+			fmt.Println("\033[31mFAIL\033[0m")
 			fmt.Println("Stored fingerprint:", pinnedPubkey.Value())
 			fmt.Println("Current fingerprint:", fingerprint)
 		}
 	}
 }
 
-func updatePins(config_file string) {
-	pins := parseGitConfig(config_file)
+func updatePins(configFile string) {
+	pins := parseGitConfig(configFile)
 	for _, pin := range pins {
 		fmt.Println("Updating pin for", pin.domain)
 		cfg, err := ini.Load(pin.file)
-		fail_on_error(err)
-		fingerprint := get_server_fingerprint(pin.domain)
+		failOnError(err)
+		fingerprint := getServerFingerprint(pin.domain)
 		cfg.Section("http").Key("pinnedPubkey").SetValue(fingerprint)
 		err = cfg.SaveTo(pin.file)
-		fail_on_error(err)
+		failOnError(err)
 	}
 }
 
-func createPinFile(domain string) {
-	fingerprint := get_server_fingerprint(domain)
-	file := path.Join("/etc/gitconfig"+".d", domain+".inc")
+func createPinFile(configFile, domain string) {
+	fingerprint := getServerFingerprint(domain)
 	cfg := ini.Empty()
 	section, err := cfg.NewSection("http")
-	fail_on_error(err)
+	failOnError(err)
 	_, err = section.NewKey("pinnedPubkey", fingerprint)
-	fail_on_error(err)
-	fmt.Println("Writing pin to", file)
+	failOnError(err)
+
+	file := path.Join(configFile+".d", domain+".inc")
+	fmt.Println("Writing pin file for " + domain + " to " + file)
 	err = cfg.SaveTo(file)
-	fail_on_error(err)
+	failOnError(err)
 }
 
-func addPin(domain string) {
-	createPinFile(domain)
+func addPin(configFile, domain string) {
+	createPinFile(configFile, domain)
 
-	cfg, err := ini.Load("/etc/gitconfig")
-	fail_on_error(err)
+	cfg, err := ini.Load(configFile)
+	failOnError(err)
 	section, err := cfg.NewSection(`includeIf "hasconfig:remote.*.url:https://` + domain + `/**"`)
-	fail_on_error(err)
-	section.NewKey("path", "/etc/gitconfig.d/"+domain+".inc")
-	err = cfg.SaveTo("/etc/gitconfig")
-	fail_on_error(err)
-
+	failOnError(err)
+	section.NewKey("path", filepath.Join(configFile+".d", domain+".inc"))
+	err = cfg.SaveTo(configFile)
+	failOnError(err)
 }
 
-func get_config_file_location(system bool) string {
-	if system {
-		return "/etc/gitconfig"
-	} else {
-		return filepath.Join(os.Getenv("HOME"), ".gitconfig")
+func deletePin(configFile, domain string) {
+	cfg, err := ini.Load(configFile)
+	failOnError(err)
+	for _, section := range cfg.Sections() {
+		searchSection := `includeIf "hasconfig:remote.*.url:https://` + domain + `/**"`
+		if strings.Compare(section.Name(), searchSection) == 0 {
+			fmt.Println("Removing " + domain + " in " + configFile)
+			cfg.DeleteSection(section.Name())
+			break
+		}
 	}
+	err = cfg.SaveTo(configFile)
+	failOnError(err)
+	configFileInclude := filepath.Join(configFile+".d", domain+".inc")
+	fmt.Println("Removing " + configFileInclude)
+	err = os.Remove(configFileInclude)
+	failOnError(err)
+}
+
+func getConfigFileLocation(system bool) string {
+	var config string
+	if system {
+		config = "/etc/gitconfig"
+	} else {
+		config = filepath.Join(os.Getenv("HOME"), ".gitconfig")
+	}
+
+	path := config + ".d"
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		err := os.Mkdir(path, os.ModePerm)
+		failOnError(err)
+	}
+	return config
 }
 
 func main() {
-	parser := argparse.NewParser("gitpin", "add ssl pinning to git")
-	system := parser.Flag("", "system", &argparse.Options{Help: "use /etc/gitconfig instead of ~/.gitconfig"})
-	show_cert := parser.String("s", "show-cert", &argparse.Options{Help: "Show certificate of <domain>"})
-	action_check := parser.Flag("c", "check", &argparse.Options{Help: "Check if fingerprints match"})
-	action_update := parser.Flag("u", "update", &argparse.Options{Help: "Update fingerprints"})
-	action_add := parser.String("a", "add", &argparse.Options{Help: "add fingerprint for <domain>"})
-	action_version := parser.Flag("v", "version", &argparse.Options{Help: "Show version"})
+	parser := argparse.NewParser(os.Args[0], "add ssl pinning to git")
+	useSystem := parser.Flag("", "system", &argparse.Options{Help: "Use /etc/gitconfig instead of ~/.gitconfig"})
+	showCertDomain := parser.String("s", "show-cert", &argparse.Options{Help: "Show certificate of <domain>"})
+	actionAddDomain := parser.String("a", "add", &argparse.Options{Help: "Add fingerprint for <domain>"})
+	actionCheck := parser.Flag("c", "check", &argparse.Options{Help: "Check if fingerprints match"})
+	actionUpdate := parser.Flag("u", "update", &argparse.Options{Help: "Update fingerprints"})
+	actionDeleteDomain := parser.String("d", "delete", &argparse.Options{Help: "Delete fingerprint for <domain>"})
+	actionVersion := parser.Flag("v", "version", &argparse.Options{Help: "Show version"})
 
 	err := parser.Parse(os.Args)
 
@@ -170,18 +203,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	config_file := get_config_file_location(*system)
+	configFile := getConfigFileLocation(*useSystem)
 
-	if len(*show_cert) != 0 {
-		print_server_certificate(*show_cert)
-	} else if *action_check {
-		checkPins(config_file)
-	} else if *action_update {
-		updatePins(config_file)
-	} else if len(*action_add) != 0 {
-		addPin(*action_add)
-	} else if *action_version {
-		fmt.Println("0.1")
+	if len(*showCertDomain) != 0 {
+		printServerCertificate(*showCertDomain)
+	} else if *actionCheck {
+		checkPins(configFile)
+	} else if *actionUpdate {
+		updatePins(configFile)
+	} else if len(*actionAddDomain) != 0 {
+		addPin(configFile, *actionAddDomain)
+	} else if len(*actionDeleteDomain) != 0 {
+		deletePin(configFile, *actionDeleteDomain)
+	} else if *actionVersion {
+		fmt.Println(os.Args[0] + " " + version)
 	}
 
 }
