@@ -1,4 +1,4 @@
-# gitpin - ssl pinning for git
+# gitpin - ssl certificate pinning for git
 
 `gitpin` is a small tool that allows you to manage ssl pinnings for git. You can also use it manually by just writing some text files:
 
