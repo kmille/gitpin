@@ -38,7 +38,7 @@ Arguments:
   -v  --version    Show version
 ```
 
-Please don't forget that these days SSL certificates expire after 90 days and you have to update the pin. There is also an [AUR](https://aur.archlinux.org/packages/gitpin) package for Arch Linux.
+Please don't forget that these days SSL certificates expire after 90 days and you have to update the pinning. There is also an [AUR](https://aur.archlinux.org/packages/gitpin) package for Arch Linux.
 
 ## TODOs
-- add support for socks5 proxy (to check if other systems get the same certificate, socks5 is nice because you can use Tor or `ssh -D`)
+- add support for socks5 proxy (to check if other systems get the same certificate, socks5 is nice because you can use it with Tor or `ssh -D`)
