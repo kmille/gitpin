@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/akamensky/argparse"
+	"golang.org/x/net/proxy"
 	"gopkg.in/ini.v1"
 )
 
@@ -31,15 +32,33 @@ func failOnError(err error) {
 	}
 }
 
-func getServerCertificate(domain string) *x509.Certificate {
+func getServerCertificate(domain string, useTor bool) *x509.Certificate {
+	var err error
+	var conn *tls.Conn
+
 	conf := &tls.Config{
 		InsecureSkipVerify: true,
+		ServerName:         domain,
 	}
-	conn, err := tls.Dial("tcp", domain+":443", conf)
+
+	if useTor {
+		proxyDialer, err := proxy.SOCKS5("tcp", "localhost:9050", nil, proxy.Direct)
+		netCon, err := proxyDialer.Dial("tcp", domain+":443")
+		failOnError(err)
+		conn = tls.Client(netCon, conf)
+		err = conn.Handshake()
+		failOnError(err)
+	} else {
+		conn, err = tls.Dial("tcp", domain+":443", conf)
+	}
+
 	failOnError(err)
 	defer conn.Close()
-	certs := conn.ConnectionState().PeerCertificates
-	return certs[0]
+	connState := conn.ConnectionState()
+	if len(connState.PeerCertificates) == 0 {
+		failOnError(errors.New("Error: No remotes certificate found"))
+	}
+	return connState.PeerCertificates[0]
 }
 
 func generateFingerprint(cert *x509.Certificate) string {
@@ -48,13 +67,13 @@ func generateFingerprint(cert *x509.Certificate) string {
 	return "sha256//" + fingerprint
 }
 
-func getServerFingerprint(domain string) string {
-	cert := getServerCertificate(domain)
+func getServerFingerprint(domain string, useTor bool) string {
+	cert := getServerCertificate(domain, useTor)
 	return generateFingerprint(cert)
 }
 
-func printServerCertificate(domain string) {
-	cert := getServerCertificate(domain)
+func printServerCertificate(domain string, useTor bool) {
+	cert := getServerCertificate(domain, useTor)
 	fmt.Println("CN:", cert.Subject.CommonName)
 	fmt.Println("Alternative subject names:", cert.DNSNames)
 	fmt.Println("NotBefore", cert.NotBefore)
@@ -92,7 +111,7 @@ func parseGitConfig(configFile string) []gitpin {
 	return pins
 }
 
-func checkPins(configFile string) {
+func checkPins(configFile string, useTor bool) {
 	pins := parseGitConfig(configFile)
 	for _, pin := range pins {
 		fmt.Print("Checking pin for ", pin.domain, " ")
@@ -101,7 +120,7 @@ func checkPins(configFile string) {
 		s, err := cfg.GetSection("http")
 		failOnError(err)
 		pinnedPubkey := s.Key("pinnedPubkey")
-		fingerprint := getServerFingerprint(pin.domain)
+		fingerprint := getServerFingerprint(pin.domain, useTor)
 		if strings.Compare(pinnedPubkey.Value(), fingerprint) == 0 {
 			fmt.Println("\033[32mOK\033[0m")
 		} else {
@@ -112,21 +131,21 @@ func checkPins(configFile string) {
 	}
 }
 
-func updatePins(configFile string) {
+func updatePins(configFile string, useTor bool) {
 	pins := parseGitConfig(configFile)
 	for _, pin := range pins {
 		fmt.Println("Updating pin for", pin.domain)
 		cfg, err := ini.Load(pin.file)
 		failOnError(err)
-		fingerprint := getServerFingerprint(pin.domain)
+		fingerprint := getServerFingerprint(pin.domain, useTor)
 		cfg.Section("http").Key("pinnedPubkey").SetValue(fingerprint)
 		err = cfg.SaveTo(pin.file)
 		failOnError(err)
 	}
 }
 
-func createPinFile(configFile, domain string) {
-	fingerprint := getServerFingerprint(domain)
+func createPinFile(configFile, domain string, useTor bool) {
+	fingerprint := getServerFingerprint(domain, useTor)
 	cfg := ini.Empty()
 	section, err := cfg.NewSection("http")
 	failOnError(err)
@@ -139,8 +158,8 @@ func createPinFile(configFile, domain string) {
 	failOnError(err)
 }
 
-func addPin(configFile, domain string) {
-	createPinFile(configFile, domain)
+func addPin(configFile, domain string, useTor bool) {
+	createPinFile(configFile, domain, useTor)
 
 	cfg, err := ini.Load(configFile)
 	failOnError(err)
@@ -189,6 +208,7 @@ func getConfigFileLocation(system bool) string {
 func main() {
 	parser := argparse.NewParser(os.Args[0], "add ssl pinning to git")
 	useSystem := parser.Flag("", "system", &argparse.Options{Help: "Use /etc/gitconfig instead of ~/.gitconfig"})
+	useTor := parser.Flag("", "tor", &argparse.Options{Help: "Connect via tor (socks5://localhost:9050"})
 	showCertDomain := parser.String("s", "show-cert", &argparse.Options{Help: "Show certificate of <domain>"})
 	actionAddDomain := parser.String("a", "add", &argparse.Options{Help: "Add fingerprint for <domain>"})
 	actionCheck := parser.Flag("c", "check", &argparse.Options{Help: "Check if fingerprints match"})
@@ -206,13 +226,13 @@ func main() {
 	configFile := getConfigFileLocation(*useSystem)
 
 	if len(*showCertDomain) != 0 {
-		printServerCertificate(*showCertDomain)
+		printServerCertificate(*showCertDomain, *useTor)
 	} else if *actionCheck {
-		checkPins(configFile)
+		checkPins(configFile, *useTor)
 	} else if *actionUpdate {
-		updatePins(configFile)
+		updatePins(configFile, *useTor)
 	} else if len(*actionAddDomain) != 0 {
-		addPin(configFile, *actionAddDomain)
+		addPin(configFile, *actionAddDomain, *useTor)
 	} else if len(*actionDeleteDomain) != 0 {
 		deletePin(configFile, *actionDeleteDomain)
 	} else if *actionVersion {
