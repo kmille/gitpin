@@ -208,7 +208,7 @@ func getConfigFileLocation(system bool) string {
 func main() {
 	parser := argparse.NewParser(os.Args[0], "add ssl pinning to git")
 	useSystem := parser.Flag("", "system", &argparse.Options{Help: "Use /etc/gitconfig instead of ~/.gitconfig"})
-	useTor := parser.Flag("", "tor", &argparse.Options{Help: "Connect via tor (socks5://localhost:9050"})
+	useTor := parser.Flag("t", "tor", &argparse.Options{Help: "Connect via tor (socks5://localhost:9050)"})
 	showCertDomain := parser.String("s", "show-cert", &argparse.Options{Help: "Show certificate of <domain>"})
 	actionAddDomain := parser.String("a", "add", &argparse.Options{Help: "Add fingerprint for <domain>"})
 	actionCheck := parser.Flag("c", "check", &argparse.Options{Help: "Check if fingerprints match"})
