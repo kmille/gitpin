@@ -18,7 +18,7 @@ import (
 	"gopkg.in/ini.v1"
 )
 
-const version = "v0.1.0"
+const version = "v0.2.1"
 
 type gitpin struct {
 	domain string
