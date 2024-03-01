@@ -27,7 +27,7 @@ type gitpin struct {
 
 func failOnError(err error) {
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Error:", err)
 		os.Exit(1)
 	}
 }
@@ -56,7 +56,7 @@ func getServerCertificate(domain string, useTor bool) *x509.Certificate {
 	defer conn.Close()
 	connState := conn.ConnectionState()
 	if len(connState.PeerCertificates) == 0 {
-		failOnError(errors.New("Error: No remotes certificate found"))
+		failOnError(errors.New("No remotes certificate found"))
 	}
 	return connState.PeerCertificates[0]
 }
