@@ -30,6 +30,7 @@ Arguments:
 
   -h  --help       Print help information
       --system     Use /etc/gitconfig instead of ~/.gitconfig
+  -t  --tor        Connect via tor (socks5://localhost:9050)
   -s  --show-cert  Show certificate of <domain>
   -a  --add        Add fingerprint for <domain>
   -c  --check      Check if fingerprints match
@@ -38,7 +39,7 @@ Arguments:
   -v  --version    Show version
 ```
 
-Please don't forget that these days SSL certificates expire after 90 days and you have to update the pinning. There is also an [AUR](https://aur.archlinux.org/packages/gitpin) package for Arch Linux.
+Please don't forget that these days SSL certificates expire after 90 days and you have to update the pinning. There is also an [AUR](https://aur.archlinux.org/packages/gitpin) package for Arch Linux. If a certificate is invalid you can use `--tor` to check the connection via tor.
 
 ## TODOs
-- add support for socks5 proxy (to check if other systems get the same certificate, socks5 is nice because you can use it with Tor or `ssh -D`)
+- ~~add support for socks5 proxy (to check if other systems get the same certificate, socks5 is nice because you can use it with Tor or `ssh -D`)~~
