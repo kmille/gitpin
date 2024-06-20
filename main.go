@@ -88,15 +88,24 @@ func parseGitConfig(configFile string) []gitpin {
 	failOnError(err)
 
 	for _, section := range cfg.Sections() {
+		// section.Name() can be like
+		// [tag]
+		// [gpg "ssh"]
+		// [includeIf "hasconfig:remote.*.url:https://heise.de/**"]
+		// [includeIf "hasconfig:remote.*.url:ssh://aur@aur.archlinux.org/riseup-vpn-git.git"]
+
+		if !strings.HasPrefix(section.Name(), "includeIf") {
+			continue
+		}
+
+		if !strings.Contains(section.Name(), "hasconfig:remote.*.url:https://") {
+			fmt.Printf("DEBUG: Skipping includeIf line: %s\n", section.Name())
+			continue
+		}
+
 		parts := strings.Split(section.Name(), " ")
-		if strings.Compare(parts[0], "includeIf") != 0 {
-			continue
-		}
-		if !strings.Contains(parts[1], "hasconfig:remote.*.url:") {
-			continue
-		}
-		indexBegin := strings.Index(parts[1], "https://")
-		domain := parts[1][indexBegin+len("https://"):]
+		indexUrl := strings.Index(parts[1], "https://")
+		domain := parts[1][indexUrl+len("https://"):]
 		if strings.Contains(domain, "/") {
 			domain = domain[:strings.Index(domain, "/")]
 		}
