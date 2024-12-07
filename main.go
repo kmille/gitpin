@@ -20,6 +20,8 @@ import (
 
 const version = "v0.2.2"
 
+var exitCode = 0
+
 type gitpin struct {
 	domain string
 	file   string
@@ -136,6 +138,7 @@ func checkPins(configFile string, useTor bool) {
 			fmt.Println("\033[31mFAIL\033[0m")
 			fmt.Println("Stored fingerprint:", pinnedPubkey.Value())
 			fmt.Println("Current fingerprint:", fingerprint)
+			exitCode = 1
 		}
 	}
 }
@@ -247,5 +250,7 @@ func main() {
 	} else if *actionVersion {
 		fmt.Println(os.Args[0] + " " + version)
 	}
+
+	os.Exit(exitCode)
 
 }
